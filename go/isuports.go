@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -47,6 +48,11 @@ var (
 	adminDB *sqlx.DB
 
 	sqliteDriverName = "sqlite3"
+
+	uniqueId = UniqueID{
+		mu: sync.Mutex{},
+		id: 0,
+	}
 )
 
 // 環境変数を取得する、なければデフォルト値を返す
@@ -97,30 +103,40 @@ func createTenantDB(id int64) error {
 	return nil
 }
 
+type UniqueID struct {
+	mu sync.Mutex
+	id int64
+}
+
 // システム全体で一意なIDを生成する
 func dispenseID(ctx context.Context) (string, error) {
 	var id int64
-	var lastErr error
-	for i := 0; i < 100; i++ {
-		var ret sql.Result
-		ret, err := adminDB.ExecContext(ctx, "REPLACE INTO id_generator (stub) VALUES (?);", "a")
-		if err != nil {
-			if merr, ok := err.(*mysql.MySQLError); ok && merr.Number == 1213 { // deadlock
-				lastErr = fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-				continue
-			}
-			return "", fmt.Errorf("error REPLACE INTO id_generator: %w", err)
-		}
-		id, err = ret.LastInsertId()
-		if err != nil {
-			return "", fmt.Errorf("error ret.LastInsertId: %w", err)
-		}
-		break
-	}
-	if id != 0 {
-		return fmt.Sprintf("%x", id), nil
-	}
-	return "", lastErr
+	// var lastErr error
+	uniqueId.mu.Lock()
+	defer uniqueId.mu.Unlock()
+	uniqueId.id++
+	id = uniqueId.id
+	return fmt.Sprintf("%x", id), nil
+	// for i := 0; i < 100; i++ {
+	// 	var ret sql.Result
+	// 	ret, err := adminDB.ExecContext(ctx, "REPLACE INTO id_generator (stub) VALUES (?);", "a")
+	// 	if err != nil {
+	// 		if merr, ok := err.(*mysql.MySQLError); ok && merr.Number == 1213 { // deadlock
+	// 			lastErr = fmt.Errorf("error REPLACE INTO id_generator: %w", err)
+	// 			continue
+	// 		}
+	// 		return "", fmt.Errorf("error REPLACE INTO id_generator: %w", err)
+	// 	}
+	// 	id, err = ret.LastInsertId()
+	// 	if err != nil {
+	// 		return "", fmt.Errorf("error ret.LastInsertId: %w", err)
+	// 	}
+	// 	break
+	// }
+	// if id != 0 {
+	// 	return fmt.Sprintf("%x", id), nil
+	// }
+	// return "", lastErr
 }
 
 // 全APIにCache-Control: privateを設定する
