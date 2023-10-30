@@ -564,44 +564,61 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
 	}
 
-	// ランキングにアクセスした参加者のIDを取得する
-	// vhs := []VisitHistorySummaryRow{}
-	// if err := adminDB.SelectContext(
-	// 	ctx,
-	// 	&vhs,
-	// 	"SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
-	// 	tenantID,
-	// 	comp.ID,
-	// ); err != nil && err != sql.ErrNoRows {
-	// 	return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
-	// }
-
-	vhps := []VisitHistoryPlayer{}
-	if err := adminDB.SelectContext(
-		ctx,
-		&vhps,
-		"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? AND created_at <= ? GROUP BY player_id",
-		tenantID,
-		comp.ID,
-		comp.FinishedAt.Int64,
-	); err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
-	}
-
 	billingMap := map[string]string{}
-	// for _, vh := range vhs {
-	// 	// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-	// 	if comp.FinishedAt.Valid && comp.FinishedAt.Int64 < vh.MinCreatedAt {
-	// 		continue
-	// 	}
-	// 	billingMap[vh.PlayerID] = "visitor"
-	// }
 
-	for _, vhp := range vhps {
-		if comp.FinishedAt.Valid {
-			continue
+	if comp.FinishedAt.Valid {
+
+		vhps := []VisitHistoryPlayer{}
+		if err := adminDB.SelectContext(
+			ctx,
+			&vhps,
+			"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? AND created_at <= ? GROUP BY player_id",
+			tenantID,
+			comp.ID,
+			comp.FinishedAt.Int64,
+		); err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
 		}
-		billingMap[vhp.PlayerID] = "visitor"
+
+		for _, vhp := range vhps {
+			billingMap[vhp.PlayerID] = "visitor"
+		}
+	} else {
+
+		vhps := []VisitHistoryPlayer{}
+		if err := adminDB.SelectContext(
+			ctx,
+			&vhps,
+			"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
+			tenantID,
+			comp.ID,
+		); err != nil && err != sql.ErrNoRows {
+			return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
+		}
+
+		for _, vhp := range vhps {
+			billingMap[vhp.PlayerID] = "visitor"
+		}
+
+		// ランキングにアクセスした参加者のIDを取得する
+		// vhs := []VisitHistorySummaryRow{}
+		// if err := adminDB.SelectContext(
+		// 	ctx,
+		// 	&vhs,
+		// 	"SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
+		// 	tenantID,
+		// 	comp.ID,
+		// ); err != nil && err != sql.ErrNoRows {
+		// 	return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
+		// }
+
+		// for _, vh := range vhs {
+		// 	// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+		// 	// if comp.FinishedAt.Valid && comp.FinishedAt.Int64 < vh.MinCreatedAt {
+		// 	// 	continue
+		// 	// }
+		// 	billingMap[vh.PlayerID] = "visitor"
+		// }
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
