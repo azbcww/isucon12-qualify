@@ -580,7 +580,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	if err := adminDB.SelectContext(
 		ctx,
 		&vhps,
-		"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? AND created_at >= ? GROUP BY player_id",
+		"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? AND created_at <= ? GROUP BY player_id",
 		tenantID,
 		comp.ID,
 		comp.FinishedAt.Int64,
@@ -598,6 +598,9 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	// }
 
 	for _, vhp := range vhps {
+		if comp.FinishedAt.Valid {
+			continue
+		}
 		billingMap[vhp.PlayerID] = "visitor"
 	}
 
