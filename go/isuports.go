@@ -553,6 +553,10 @@ type VisitHistorySummaryRow struct {
 	MinCreatedAt int64  `db:"min_created_at"`
 }
 
+type VisitHistoryPlayer struct {
+	PlayerID string `db:"player_id"`
+}
+
 // 大会ごとの課金レポートを計算する
 func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitonID string) (*BillingReport, error) {
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
@@ -561,23 +565,40 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
-	vhs := []VisitHistorySummaryRow{}
+	// vhs := []VisitHistorySummaryRow{}
+	// if err := adminDB.SelectContext(
+	// 	ctx,
+	// 	&vhs,
+	// 	"SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
+	// 	tenantID,
+	// 	comp.ID,
+	// ); err != nil && err != sql.ErrNoRows {
+	// 	return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
+	// }
+
+	vhps := []VisitHistoryPlayer{}
 	if err := adminDB.SelectContext(
 		ctx,
-		&vhs,
-		"SELECT player_id, MIN(created_at) AS min_created_at FROM visit_history WHERE tenant_id = ? AND competition_id = ? GROUP BY player_id",
+		&vhps,
+		"SELECT player_id FROM visit_history WHERE tenant_id = ? AND competition_id = ? AND created_at >= ? GROUP BY player_id",
 		tenantID,
 		comp.ID,
+		comp.FinishedAt.Int64,
 	); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("error Select visit_history: tenantID=%d, competitionID=%s, %w", tenantID, comp.ID, err)
 	}
+
 	billingMap := map[string]string{}
-	for _, vh := range vhs {
-		// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
-		if comp.FinishedAt.Valid && comp.FinishedAt.Int64 < vh.MinCreatedAt {
-			continue
-		}
-		billingMap[vh.PlayerID] = "visitor"
+	// for _, vh := range vhs {
+	// 	// competition.finished_atよりもあとの場合は、終了後に訪問したとみなして大会開催内アクセス済みとみなさない
+	// 	if comp.FinishedAt.Valid && comp.FinishedAt.Int64 < vh.MinCreatedAt {
+	// 		continue
+	// 	}
+	// 	billingMap[vh.PlayerID] = "visitor"
+	// }
+
+	for _, vhp := range vhps {
+		billingMap[vhp.PlayerID] = "visitor"
 	}
 
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
